@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+.venv/
+.venv-*/
+.eval_*/
+
+starter_kit/
+dist/
+submission/weights/*.ckpt
+notes/runs/
+.cursor/
