@@ -89,3 +89,7 @@ scripts/             setup, local evaluation, robustness test, model comparison,
 TabPFN v2 (Prior Labs, Prior Labs License: Apache 2.0 with attribution), checkpoint
 `tabpfn-v2-classifier.ckpt` from `Prior-Labs/TabPFN-v2-clf` at commit
 `f851f2a3c941544733b712d8c0f96dfae9b28862`.
+
+## Licence
+
+MIT, see `LICENSE`. TabPFN v2 keeps its own licence (see above).

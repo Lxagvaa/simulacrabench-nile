@@ -11,3 +11,11 @@ dist/
 submission/weights/*.ckpt
 notes/runs/
 .cursor/
+report/*.aux
+report/*.log
+report/*.bbl
+report/*.blg
+report/*.out
+report/main_review.*
+report/pipeline.png
+report/overleaf_upload.zip

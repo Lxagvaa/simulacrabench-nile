@@ -1,4 +1,4 @@
-.PHONY: setup eval eval-fast eval-final test official zip
+.PHONY: setup eval eval-fast eval-final test official zip report
 
 setup:       ## environment, starter kit, sandbox data, TabPFN checkpoint
 	./scripts/setup.sh
@@ -14,3 +14,5 @@ official:    ## the organisers' grader on all three sandboxes
 	./scripts/official_check.sh
 zip:         ## dist/submission.zip, validated
 	./scripts/build_zip.sh
+report:      ## technical report: report/main.tex -> report/main.pdf
+	cd report && tectonic -X compile main.tex

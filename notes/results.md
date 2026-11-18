@@ -100,3 +100,14 @@ accepted per item only on held-out-half gain. panel: 2/213 items, 0.5919 -> 0.59
 (+192 nats held-out on OOF) but test 0.5018 -> 0.5017; World Bank: 0/76. The OOF gain does not carry over
 to the scored rows. Removed from the pipeline (module simbench/stacking.py kept, unused). v0.16 = v0.15.
 
+## Final candidate on the development leaderboard (2026-11-12, marginal-reference skill)
+
+dist/submission_final.zip (= submission.zip, cleaned v0.15, identical to the repo): mean 0.48 = 0.35 / 0.25 / 0.85
+(leaders 0.87). Ran cleanly on the hosted machine and is now the team's leaderboard entry. Same file goes to
+the Test phase (Nov 15-19 AoE).
+
+
+## Test phase (2026-11-18, exact leaderboard entry)
+
+Same zip: Grand Prize 0.48 = UNICEF 0.34 / World Bank 0.23 / UNHCR 0.86, rank 35 of 35 shown. The top 14 are
+at 0.49 (0.34 / 0.24 / 0.88-0.89); UNHCR is the gap.
