@@ -22,8 +22,9 @@ time and memory and returns legal vectors; they say little about real performanc
 
 `predict(frame, schema)` is called once per instrument. Visible respondents are complete; held-out
 respondents only show `GIVEN`. For every blank cell it returns a distribution over the item's values,
-plus a final `NA_GATED` slot for gated items. Score: log score as skill (uniform 0, perfect 1), mean
-over the instruments. One H100, 16 GB RAM, 900 s (development) / 3600 s (final) for all three.
+plus a final `NA_GATED` slot for gated items. Score: log score as skill (crowd marginal 0, perfect 1;
+until 26 Oct 2026 the reference was a uniform guess), mean over the instruments. One H100, 16 GB RAM,
+900 s (development) / 3600 s (final) for all three.
 
 ## Approach
 
@@ -56,7 +57,16 @@ Each component's first fold is timed and the component is dropped if all folds p
 not fit. If the refit on all rows would overrun, the average of the fold models is used instead.
 Final-phase run on the sandboxes: about 2700 s and 5 GB peak memory.
 
-## Results (development leaderboard)
+## Results
+
+Final submission (`dist/submission_final.zip`, this repository), marginal-reference skill:
+
+| phase | UNICEF | World Bank | UNHCR | mean |
+|---|---|---|---|---|
+| development | 0.35 | 0.25 | 0.85 | 0.48 |
+| test | 0.34 | 0.23 | 0.86 | 0.48 |
+
+Development history on the earlier uniform-reference scale:
 
 | version | UNICEF | World Bank | UNHCR | mean |
 |---|---|---|---|---|
@@ -65,7 +75,7 @@ Final-phase run on the sandboxes: about 2700 s and 5 GB peak memory.
 | v0.3 – gate context | 0.52 | 0.49 | 0.90 | 0.64 |
 | v0.12 – gradient boosting on all items | 0.52 | 0.49 | 0.92 | 0.64 |
 
-Scores are noised and rounded to 0.01. Experiment notes are in `notes/results.md`.
+Development scores are noised and rounded to 0.01. The technical report is in `report/`. Experiment notes are in `notes/results.md`.
 
 ## Layout
 
