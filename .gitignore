@@ -10,7 +10,6 @@ starter_kit/
 dist/
 submission/weights/*.ckpt
 notes/runs/
-.cursor/
 report/*.aux
 report/*.log
 report/*.bbl
