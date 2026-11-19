@@ -53,18 +53,19 @@
 \end{center}
 
 \begin{abstract}
-We predict the answers of held-out survey respondents from their \texttt{GIVEN} block. Each gated
-item is decomposed into the probability of being asked and the answer distribution given that it
-was asked; the former comes from the parent item's prediction and gate tables estimated from the
-data, because the delivered files do not always follow the questionnaire routing. About 30
-conditional models from six families (hierarchical backoff and profile matching, multi-task softmax
-networks, latent class and latent factor models, gradient boosting and random forests, an ordinal
-logit, and TabPFN~v2) are fitted inside the submission on the visible respondents and combined by a
-per-item linear pool with EM-fitted weights and temperature calibration. Structure-aware corrections
-for gate parents, multi-select families and ordinal scales are kept only where they improve the
-out-of-fold score. A scheduler times every component against the compute budget and falls back to
-averaged fold models when a final refit would overrun. Test-phase Grand Prize score:
-0.48 (UNICEF 0.34, World Bank 0.23, UNHCR 0.86).
+SimulacraBench asks for the answers of held-out respondents to three household surveys (UNICEF,
+World Bank, UNHCR), given only a few background variables per respondent, the \texttt{GIVEN}
+block. Many questions are \emph{gated}: they are only asked if an earlier \emph{parent} question
+received a certain answer. We decompose each gated item into the probability of being asked and the
+answer distribution given that it was asked. The former combines the predicted answer to the parent
+with gate tables estimated from the data, because the released survey files do not always follow
+the questionnaire routing. About 30 conditional models from six families (hierarchical backoff and
+profile matching, multi-task softmax networks, latent class and latent factor models, gradient
+boosting and random forests, an ordinal logit, and TabPFN~v2) are fitted on the visible respondents
+and combined by a per-item linear pool with EM-fitted weights and temperature calibration.
+Structure-aware corrections for gate parents, multi-select questions and ordinal scales are kept
+only where they improve the out-of-fold score. A scheduler fits all components into the compute
+budget. Our test-phase Grand Prize score is 0.48 (UNICEF 0.34, World Bank 0.23, UNHCR 0.86).
 \end{abstract}
 
 %% ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ averaged fold models when a final refit would overrun. Test-phase Grand Prize sc
 \label{sec:method}
 
 \subsection{Method type}
-Mark every category that applies; the categories are not mutually exclusive. A one-line description of each marked component follows in Section~\ref{sec:pipeline}.
+Each category that applies to our approach is marked. The categories are not mutually exclusive. The marked components are described in Section~\ref{sec:model}.
 
 \begin{table}[h]
   \centering
@@ -92,9 +93,12 @@ Mark every category that applies; the categories are not mutually exclusive. A o
 
 \subsection{Pipeline}
 \label{sec:pipeline}
-The submission is a single \texttt{predict(frame, schema)} function. All fitting happens inside it,
-once per instrument, on the visible (complete) respondents; nothing is trained offline except the
-pretrained TabPFN~v2 checkpoint~\citep{hollmann2025tabpfn}. Figure~\ref{fig:pipeline} shows the steps.
+Our approach is implemented as a single function \texttt{predict(frame, schema)}, which the
+organisers call once per instrument, i.e.\ per survey. Each call receives all respondents of that
+survey: the visible respondents with complete answers and the held-out respondents, of whom only the
+\texttt{GIVEN} columns are shown. All fitting happens inside this function on the visible
+respondents. Nothing is trained offline except the pretrained TabPFN~v2
+checkpoint~\citep{hollmann2025tabpfn}. Figure~\ref{fig:pipeline} shows the steps of our pipeline.
 
 \begin{figure}[h]
   \centering
@@ -121,22 +125,25 @@ pretrained TabPFN~v2 checkpoint~\citep{hollmann2025tabpfn}. Figure~\ref{fig:pipe
 \end{figure}
 
 \subsection{Inputs and feature construction}
-The method uses only the \texttt{GIVEN} columns of each respondent and the answers of the visible
-respondents. \texttt{respondent\_id}, row order, question wording and \texttt{EXCLUDE} items are not
-used. Every option is coded by normalised string (so \texttt{3}, \texttt{3.0} and \texttt{"3"}
-agree); \texttt{GIVEN} columns become a one-hot matrix for the linear, neural and latent models and
-stay as codes for trees and count models. A profile-matching model never lets the survey-round
+Our approach uses only the \texttt{GIVEN} columns of each respondent and the answers of the visible
+respondents. It does not use the respondent identifier, the row order, the question wording or the
+items marked \texttt{EXCLUDE}. Every answer option is coded as a normalised string, i.e.\ \texttt{3},
+\texttt{3.0} and \texttt{"3"} are the same option. The \texttt{GIVEN} columns become a one-hot
+matrix for the linear, neural and latent models and stay as category codes for trees and count
+models. A profile-matching model never lets the survey-round
 column differ, so no household is matched with its own record from another round.
 
 \subsection{Model or simulator}
-For a gated item $j$ with \texttt{GIVEN} block $x$,
-\begin{equation*}
-P(y_j = v \mid x) = P(\text{asked}_j \mid x)\, P(v \mid \text{asked}_j, x), \quad
-P(y_j = \texttt{NA\_GATED} \mid x) = 1 - P(\text{asked}_j \mid x).
-\end{equation*}
-$P(\text{asked}_j \mid x) = \sum_v P(\text{parent} = v \mid x)\, t_j(v, c(x))$, where $t_j$ is an
-empirical table over the parent value and up to two context columns $c(x)$ (typically the survey
-round), shrunk toward the schema rule. Context columns are added greedily by bias-corrected
+\label{sec:model}
+A gated item $j$ is only asked if its parent item has one of the answers named in the schema;
+otherwise its cell holds \texttt{NA\_GATED}. For a respondent with \texttt{GIVEN} block $x$,
+\begin{align*}
+P(y_j = v \mid x) &= P(\text{asked}_j \mid x)\, P(v \mid \text{asked}_j, x),\\
+P(y_j = \texttt{NA\_GATED} \mid x) &= 1 - P(\text{asked}_j \mid x),\\
+P(\text{asked}_j \mid x) &= \textstyle\sum_v P(\text{parent}_j = v \mid x)\, t_j(v, c(x)),
+\end{align*}
+where $t_j$ is an empirical table over the parent's answer $v$ and up to two context columns $c(x)$
+(typically the survey round), shrunk toward the schema rule. Context columns are added greedily by bias-corrected
 conditional mutual information. Items are composed in topological order of the gates. Several
 components also exist in a \emph{direct} variant that treats \texttt{NA\_GATED} as an ordinary
 answer. The conditional models are: smoothed marginals; hierarchical Dirichlet backoff over up to
@@ -150,11 +157,12 @@ independent given $x$, which is exact for the per-cell log score. Appendix~\ref{
 every component with its settings.
 
 \subsection{Fitting, training, or prompting}
+\label{sec:fit}
 Everything is fitted at run time on the visible rows (TRAIN in the development phase, TRAIN and DEV
-in the test phase); no external data. Out-of-fold predictions come from 3 folds (development) or 5
-folds (test). Linear models and MLPs use full-batch L-BFGS with output biases initialised at the log
-marginals; boosting uses early stopping on 15\% of the rows; backoff and profile-matching strengths
-are chosen per item by exact leave-one-out log score. A scheduler times each component's first fold
+in the test phase) without any external data. Out-of-fold predictions come from 3 folds
+(development) or 5 folds (test). Linear models and MLPs use full-batch L-BFGS with output biases
+initialised at the log marginals. Boosting uses early stopping on 15\% of the rows. Backoff and
+profile-matching strengths are chosen per item by exact leave-one-out log score. A scheduler times each component's first fold
 and drops it if all folds plus the refit would exceed 85\% of the instrument's budget.
 
 \subsection{Prediction and aggregation}
@@ -165,18 +173,20 @@ components refitted on all visible rows, or from the average of their fold model
 would not finish in time. There are no survey weights to apply.
 
 \subsection{Post-processing and calibration (if applicable)}
-Fitted on the out-of-fold blend and applied only where they improve its log
-score~\citep{gneiting2007scoring}: one temperature per instrument and optionally per
-item~\citep{guo2017calibration}; temperatures of gate parents chosen on the parent's and its
-children's log scores; for multi-select families, a common logit shift that ties each respondent's
-expected number of ticks to the observed relation with the predicted count; and smoothing of
-probability mass between neighbouring bands of numeric scales.
+All post-processing steps are fitted on the out-of-fold blend and applied only where they improve
+its log score~\citep{gneiting2007scoring}. The blend is calibrated with one temperature per
+instrument and optionally one per item~\citep{guo2017calibration}. For gate parents, the temperature
+is chosen on the log scores of the parent and its children together. For multi-select questions, a
+common logit shift ties each respondent's expected number of ticked options to the count observed
+for similar predictions. Finally, probability mass is smoothed between neighbouring bands of numeric
+scales.
 
 %% ---------------------------------------------------------------------------
 \section{Models, data, and compute}
 \label{sec:resources}
 
-\paragraph{Pretrained models and off-the-shelf components.}
+\paragraph{Pretrained models and off-the-shelf components.} Table~\ref{tab:models} lists the
+pretrained model and the off-the-shelf components used by our approach.
 
 \begin{table}[h]
   \centering
@@ -193,8 +203,10 @@ probability mass between neighbouring bands of numeric scales.
   \end{tabular}
 \end{table}
 
-\paragraph{Data.} Only the official SimulacraBench frames passed to \texttt{predict}; the organisers'
-synthetic sandboxes were used for local development and timing. No external data.
+\paragraph{Data.} Our approach is fitted only on the official SimulacraBench data passed to
+\texttt{predict}. The synthetic sandbox data provided by the organisers were used for local
+development and timing tests. As stated in Section~\ref{sec:fit}, no external data were used
+(Table~\ref{tab:external}).
 
 \begin{table}[h]
   \centering
@@ -210,7 +222,7 @@ synthetic sandboxes were used for local development and timing. No external data
   \end{tabular}
 \end{table}
 
-\paragraph{Compute.} One H100 and 8 CPU cores of the hosted container. The total budget (our own
+\paragraph{Compute.} Our approach runs on one H100 GPU and 8 CPU cores of the hosted container. The total budget (our own
 limit: 780\,s development, 3300\,s test) is split across instruments in proportion to their measured
 cost. In a local test-phase simulation the full run took about 2{,}700--2{,}850\,s with a peak memory
 of 5.2\,GB.
@@ -224,7 +236,8 @@ of 5.2\,GB.
 \begin{table}[h]
   \centering
   \small
-  \caption{Official SimulacraBench results for team \teamid{} (skill relative to the crowd marginal).}
+  \caption{Official SimulacraBench results for team \teamid{}. Skill is measured relative to the
+  organisers' baseline, the crowd marginal, which therefore scores 0 by definition.}
   \label{tab:results}
   \begin{tabular}{lrrrr}
     \toprule
@@ -232,7 +245,7 @@ of 5.2\,GB.
     \midrule
     Development & 0.48 & 0.35 & 0.25 & 0.85 \\
     Test        & 0.48 & 0.34 & 0.23 & 0.86 \\
-    Organizer baseline (test) & 0.000 & 0.000 & 0.000 & 0.000 \\
+    Organizer baseline (test) & 0.00 & 0.00 & 0.00 & 0.00 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -327,9 +340,15 @@ returned for that instrument.
 
 \section{(Optional) Additional results}
 
-\paragraph{What did not help.} Learned gate parents (no gain: the direct variants already predict
-\texttt{NA\_GATED} from \texttt{GIVEN}); adapting to a visible/held-out shift (never triggered, as
-roles were assigned after shuffling); a log-linear instead of linear pool ($-0.0014$ to $+0.0009$
-skill); stacking a second stage on all items' predictions (out-of-fold gains did not transfer).
+The following methods did not help:
+\begin{itemize}[leftmargin=*]
+  \item Learned gate parents: no gain, because the direct variants already predict
+        \texttt{NA\_GATED} from \texttt{GIVEN}.
+  \item Adapting to a shift between visible and held-out respondents: never triggered, because the
+        organisers assigned the roles after shuffling the rows.
+  \item A log-linear instead of a linear pool: $-0.0014$ to $+0.0009$ skill.
+  \item Stacking a second stage on the predictions of all items: the out-of-fold gains did not
+        carry over to the scored rows.
+\end{itemize}
 
 \end{document}
