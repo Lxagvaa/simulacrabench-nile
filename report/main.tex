@@ -62,7 +62,7 @@ with the observed rates at which the question was actually asked, because the
 released survey files do not always follow the questionnaire's skip rules. About 30 conditional models from six families (hierarchical backoff and
 profile matching, multi-task softmax networks, latent class and latent factor models, gradient
 boosting and random forests, an ordinal logit, and TabPFN~v2) are fitted on the visible respondents
-and combined by a per-item weighted average with weights fitted by expectation-maximisation and a
+and combined by a per-item weighted average with weights fitted by expectation-maximisation (EM) and a
 temperature calibration. Corrections that exploit the survey structure (gate parents, multi-select
 questions, ordinal scales) are kept only where they improve the cross-validated score. A scheduler fits all components into the compute
 budget. Our test-phase Grand Prize score is 0.48 (UNICEF 0.34, World Bank 0.23, UNHCR 0.86).
@@ -95,9 +95,13 @@ described in Section~\ref{sec:model}.
 \subsection{Pipeline}
 \label{sec:pipeline}
 Our approach is implemented as a single function \texttt{predict(frame, schema)}, which the
-organisers call once per instrument, i.e.\ per survey. Each call receives all respondents of that
-survey: the visible respondents with complete answers and the held-out respondents, of whom only the
-\texttt{GIVEN} columns are shown. All fitting happens inside this function on the visible
+organisers call once per survey (an \emph{instrument} in the competition's terms). Each call
+receives all respondents of that survey: the visible respondents with complete answers and the
+held-out respondents, of whom only the \texttt{GIVEN} columns are shown. Each column to predict is
+an \emph{item}: a question, or one option of a question where several options can be ticked
+(\emph{multi-select}). For every blank cell, the function returns a probability distribution over
+the item's answers, scored by the \emph{log score}, the logarithm of the probability given to the
+true answer. All fitting happens inside this function on the visible
 respondents. Nothing is trained offline except the pretrained TabPFN~v2
 checkpoint~\citep{hollmann2025tabpfn}. Figure~\ref{fig:pipeline} shows the steps of our pipeline. To estimate how well each component
 predicts, the visible respondents are split at random into $K$ disjoint \emph{folds}. Each component
@@ -124,7 +128,7 @@ is fitted on all but one fold and predicts the left-out fold; repeating this for
     \draw[arr] (rf.east) -- (pp.west);
     \draw[arr] (fa.east) -- (pp.west);
   \end{tikzpicture}
-  \caption{Pipeline per instrument. A component is kept only if its timed first fold predicts that all folds and the refit fit the budget; a refit that would overrun is replaced by the average of the fold models (lower path).}
+  \caption{Pipeline per survey. A component is kept only if, judging by the time of its first fold, all folds and the final fit on all visible respondents (refit) fit the time budget. A refit that would overrun is replaced by the average of the fold models (lower path).}
   \label{fig:pipeline}
 \end{figure}
 
@@ -147,11 +151,13 @@ P(y_j = v \mid x) &= P(\text{asked}_j \mid x)\, P(v \mid \text{asked}_j, x),\\
 P(y_j = \texttt{NA\_GATED} \mid x) &= 1 - P(\text{asked}_j \mid x),\\
 P(\text{asked}_j \mid x) &= \textstyle\sum_v P(\text{parent}_j = v \mid x)\, t_j(v, c(x)),
 \end{align*}
-where $t_j$ is an empirical table over the parent's answer $v$ and up to two context columns $c(x)$
-(typically the survey round), shrunk toward the schema rule. Context columns are added greedily by bias-corrected
-conditional mutual information. Items are composed in topological order of the gates. Several
+where $t_j(v, c(x))$ is the observed rate at which item $j$ was asked, given the parent's answer $v$
+and up to two context columns $c(x)$ (typically the survey round). Where data are sparse, these
+rates are pulled toward the routing rule in the schema. Context columns are chosen greedily by
+bias-corrected conditional mutual information. Items are predicted in an order in which every
+parent comes before its children. Several
 components also exist in a \emph{direct} variant, which skips this decomposition and predicts
-\texttt{NA\_GATED} from $x$ like any other answer. The conditional models are: smoothed marginals; hierarchical Dirichlet backoff over up to
+\texttt{NA\_GATED} from $x$ like any other answer. The conditional models are: smoothed marginals (the answer shares among visible respondents); hierarchical Dirichlet backoff over up to
 three \texttt{GIVEN} columns; profile matching on identical or near-identical profiles; multi-task
 softmax regression and MLPs; latent class regression~\citep{dayton1988concomitant}; a continuous
 latent factor model (multidimensional nominal-response IRT~\citep{bock1972nominal} fitted as a
@@ -163,26 +169,28 @@ every component with its settings.
 
 \subsection{Fitting, training, or prompting}
 \label{sec:fit}
-Everything is fitted at run time on the visible rows (TRAIN in the development phase, TRAIN and DEV
+Everything is fitted at run time on the visible respondents (TRAIN in the development phase, TRAIN and DEV
 in the test phase) without any external data. Out-of-fold predictions come from 3 folds
 (development) or 5 folds (test). Linear models and MLPs use full-batch L-BFGS with output biases
 initialised at the log marginals. Boosting uses early stopping on 15\% of the rows. Backoff and
 profile-matching strengths are chosen per item by exact leave-one-out log score. A scheduler times each component's first fold
-and drops it if all folds plus the refit would exceed 85\% of the instrument's budget.
+and drops it if all folds plus the refit would exceed 85\% of the survey's time budget.
 
 \subsection{Prediction and aggregation}
-The components' out-of-fold distributions are combined by a linear pool whose weights are fitted per
-item by EM~\citep{dempster1977em} on the floored log likelihood (floor 0.001, as in the grader),
-shrunk toward per-instrument weights (Dirichlet prior, strength 30). Final predictions come from
-components refitted on all visible rows, or from the average of their fold models when the refit
+The components' out-of-fold distributions are combined by a weighted average (linear pool). Its
+weights are fitted per item by expectation-maximisation (EM)~\citep{dempster1977em} on the log
+likelihood, with probabilities floored at 0.001 as in the official scoring, and shrunk toward
+weights shared by the whole survey (Dirichlet prior, strength 30). Final predictions come from
+components refitted on all visible respondents, or from the average of their fold models when the refit
 would not finish in time. There are no survey weights to apply.
 
 \subsection{Post-processing and calibration (if applicable)}
-All post-processing steps are fitted on the out-of-fold blend and applied only where they improve
-its log score~\citep{gneiting2007scoring}. The blend is calibrated with one temperature per
-instrument and optionally one per item~\citep{guo2017calibration}. For gate parents, the temperature
+All post-processing steps are fitted on the combined out-of-fold predictions and applied only where
+they improve their log score~\citep{gneiting2007scoring}. The combination is calibrated with a
+\emph{temperature}, an exponent that sharpens or flattens the predicted distribution: one per survey
+and optionally one per item~\citep{guo2017calibration}. For gate parents, the temperature
 is chosen on the log scores of the parent and its children together. For multi-select questions, a
-common logit shift ties each respondent's expected number of ticked options to the count observed
+common shift of the logits ties each respondent's expected number of ticked options to the count observed
 for similar predictions. Finally, probability mass is smoothed between neighbouring bands of numeric
 scales.
 
@@ -227,9 +235,10 @@ development and timing tests. As stated in Section~\ref{sec:fit}, no external da
   \end{tabular}
 \end{table}
 
-\paragraph{Compute.} Our approach runs on one H100 GPU and 8 CPU cores of the hosted container. The total budget (our own
-limit: 780\,s development, 3300\,s test) is split across instruments in proportion to their measured
-cost. In a local test-phase simulation the full run took about 2{,}700--2{,}850\,s with a peak memory
+\paragraph{Compute.} The organisers run each submission in a hosted container with one H100 GPU,
+8 CPU cores and 16\,GB RAM, with a time limit of 900\,s (development) and 3600\,s (test) for all three
+surveys. As a safety margin, our approach plans with 780\,s and 3300\,s and splits this budget across
+the surveys in proportion to their measured cost. In a local test-phase simulation the full run took about 2{,}700--2{,}850\,s with a peak memory
 of 5.2\,GB.
 
 %% ---------------------------------------------------------------------------
@@ -258,12 +267,12 @@ visible respondents (the crowd marginal) and therefore scores 0 by definition.
 \end{table}
 
 \subsection{Breakdown by population, survey, or question type}
-UNHCR, the instrument with the most structure (213 items, 156 of them gated, 139 options of
+UNHCR, the survey with the most structure (213 items, 156 of them gated, 139 options of
 multi-select questions), is where modelling choices mattered most. On the development leaderboard
-(original uniform-reference skill), modelling the skip logic with context-dependent gate tables
-raised UNHCR from 0.76 to 0.90, and gradient boosting on every item to 0.92; UNICEF (0.52) and World
-Bank (0.49) did not move in any version. UNHCR remains our weakest instrument relative to the
-leaders (0.85 vs.\ 0.87 on the marginal-reference development scale).
+(on the earlier scale, where 0 meant a uniform guess), modelling the skip logic with asked-rates
+that depend on the survey round raised UNHCR from 0.76 to 0.90, and gradient boosting on every item to 0.92; UNICEF (0.52) and World
+Bank (0.49) did not move in any version. UNHCR remains our weakest survey relative to the
+leaders (0.85 vs.\ 0.87 on the development leaderboard, current scale).
 
 %% ---------------------------------------------------------------------------
 \section{Reproducibility}
@@ -337,13 +346,13 @@ shrunk toward the coarser level with strength 10; at most two context columns. P
 
 \paragraph{Blend and calibration.} EM from 2{,}000 iterations (global, started at 80\% weight on the
 best single component) and 300 iterations per item; temperature in $[0.6, 1.5]$, per item only if
-the out-of-fold gain exceeds 2 nats. Post-processing steps require out-of-fold gains of 5 nats (gate
-parents, multi-select families) or 2 nats (ordinal smoothing).
+the out-of-fold gain in summed log score exceeds 2 nats (natural-log units). Post-processing steps require out-of-fold gains of 5 nats (gate
+parents, multi-select questions) or 2 nats (ordinal smoothing).
 
 \paragraph{Time and memory.} Each fit checks a wall-clock deadline; L-BFGS evaluations are capped
 at $3\times$ the iteration limit; boosting fits run single-threaded, eight items in parallel; one
 TabPFN network is shared across items; if a crash reaches the entry point, crowd marginals are
-returned for that instrument.
+returned for that survey.
 
 \section{(Optional) Additional results}
 
