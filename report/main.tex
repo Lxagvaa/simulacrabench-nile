@@ -58,13 +58,13 @@ World Bank, UNHCR), given only a few background variables per respondent, the \t
 block. Many questions are \emph{gated}: they are only asked if an earlier \emph{parent} question
 received a certain answer. We decompose each gated item into the probability of being asked and the
 answer distribution given that it was asked. The former combines the predicted answer to the parent
-with gate tables estimated from the data, because the released survey files do not always follow
-the questionnaire routing. About 30 conditional models from six families (hierarchical backoff and
+with the observed rates at which the question was actually asked, because the
+released survey files do not always follow the questionnaire's skip rules. About 30 conditional models from six families (hierarchical backoff and
 profile matching, multi-task softmax networks, latent class and latent factor models, gradient
 boosting and random forests, an ordinal logit, and TabPFN~v2) are fitted on the visible respondents
-and combined by a per-item linear pool with EM-fitted weights and temperature calibration.
-Structure-aware corrections for gate parents, multi-select questions and ordinal scales are kept
-only where they improve the out-of-fold score. A scheduler fits all components into the compute
+and combined by a per-item weighted average with weights fitted by expectation-maximisation and a
+temperature calibration. Corrections that exploit the survey structure (gate parents, multi-select
+questions, ordinal scales) are kept only where they improve the cross-validated score. A scheduler fits all components into the compute
 budget. Our test-phase Grand Prize score is 0.48 (UNICEF 0.34, World Bank 0.23, UNHCR 0.86).
 \end{abstract}
 
@@ -73,7 +73,8 @@ budget. Our test-phase Grand Prize score is 0.48 (UNICEF 0.34, World Bank 0.23, 
 \label{sec:method}
 
 \subsection{Method type}
-Each category that applies to our approach is marked. The categories are not mutually exclusive. The marked components are described in Section~\ref{sec:model}.
+Each category that applies to our approach is marked. The categories are not mutually exclusive. The marked components, i.e.\ the individual prediction models combined in our ensemble, are
+described in Section~\ref{sec:model}.
 
 \begin{table}[h]
   \centering
@@ -98,7 +99,10 @@ organisers call once per instrument, i.e.\ per survey. Each call receives all re
 survey: the visible respondents with complete answers and the held-out respondents, of whom only the
 \texttt{GIVEN} columns are shown. All fitting happens inside this function on the visible
 respondents. Nothing is trained offline except the pretrained TabPFN~v2
-checkpoint~\citep{hollmann2025tabpfn}. Figure~\ref{fig:pipeline} shows the steps of our pipeline.
+checkpoint~\citep{hollmann2025tabpfn}. Figure~\ref{fig:pipeline} shows the steps of our pipeline. To estimate how well each component
+predicts, the visible respondents are split at random into $K$ disjoint \emph{folds}. Each component
+is fitted on all but one fold and predicts the left-out fold; repeating this for every fold gives
+\emph{out-of-fold} predictions for all visible respondents.
 
 \begin{figure}[h]
   \centering
@@ -136,7 +140,8 @@ column differ, so no household is matched with its own record from another round
 \subsection{Model or simulator}
 \label{sec:model}
 A gated item $j$ is only asked if its parent item has one of the answers named in the schema;
-otherwise its cell holds \texttt{NA\_GATED}. For a respondent with \texttt{GIVEN} block $x$,
+otherwise its cell holds \texttt{NA\_GATED}. For a respondent with \texttt{GIVEN} block $x$ and
+answer $y_j$ to item $j$,
 \begin{align*}
 P(y_j = v \mid x) &= P(\text{asked}_j \mid x)\, P(v \mid \text{asked}_j, x),\\
 P(y_j = \texttt{NA\_GATED} \mid x) &= 1 - P(\text{asked}_j \mid x),\\
@@ -145,8 +150,8 @@ P(\text{asked}_j \mid x) &= \textstyle\sum_v P(\text{parent}_j = v \mid x)\, t_j
 where $t_j$ is an empirical table over the parent's answer $v$ and up to two context columns $c(x)$
 (typically the survey round), shrunk toward the schema rule. Context columns are added greedily by bias-corrected
 conditional mutual information. Items are composed in topological order of the gates. Several
-components also exist in a \emph{direct} variant that treats \texttt{NA\_GATED} as an ordinary
-answer. The conditional models are: smoothed marginals; hierarchical Dirichlet backoff over up to
+components also exist in a \emph{direct} variant, which skips this decomposition and predicts
+\texttt{NA\_GATED} from $x$ like any other answer. The conditional models are: smoothed marginals; hierarchical Dirichlet backoff over up to
 three \texttt{GIVEN} columns; profile matching on identical or near-identical profiles; multi-task
 softmax regression and MLPs; latent class regression~\citep{dayton1988concomitant}; a continuous
 latent factor model (multidimensional nominal-response IRT~\citep{bock1972nominal} fitted as a
@@ -232,12 +237,14 @@ of 5.2\,GB.
 \label{sec:results}
 
 \subsection{Test-phase leaderboard results}
+Table~\ref{tab:results} shows the official scores of our submission. The score is a log-score
+skill measured relative to the organisers' baseline, which predicts the answer shares of all
+visible respondents (the crowd marginal) and therefore scores 0 by definition.
 
 \begin{table}[h]
   \centering
   \small
-  \caption{Official SimulacraBench results for team \teamid{}. Skill is measured relative to the
-  organisers' baseline, the crowd marginal, which therefore scores 0 by definition.}
+  \caption{Official SimulacraBench results for team \teamid{}.}
   \label{tab:results}
   \begin{tabular}{lrrrr}
     \toprule
@@ -282,8 +289,8 @@ that run, and hence the predictions, can differ slightly on other hardware.
 \label{sec:limitations}
 
 The method predicts each cell from the \texttt{GIVEN} block alone, so it cannot do better than the
-information those few columns carry; on UNICEF and World Bank all strong teams converged on almost
-the same score. Its gains were validated mostly on out-of-fold scores and synthetic data, where they
+information those few columns carry. On UNICEF and World Bank, none of our model changes moved the
+score, which suggests that this limit is close. Its gains were validated mostly on out-of-fold scores and synthetic data, where they
 translated to real data at roughly a third of their size, so small differences between its
 components should not be over-interpreted.
 
