@@ -115,7 +115,7 @@ is fitted on all but one fold and predicts the left-out fold; repeating this for
       box/.style={draw, rounded corners=2pt, align=center, minimum height=0.85cm, text width=2.15cm, font=\footnotesize},
       acc/.style={box, draw=blue!70!black, fill=blue!8, very thick},
       arr/.style={-{Stealth[length=2mm]}, semithick}, node distance=0.35cm]
-    \node[box] (enc) {Encode frame,\\ gate tables};
+    \node[box] (enc) {Encode data,\\ observed rates};
     \node[box, right=of enc] (oof) {Out-of-fold for\\ $\sim$30 components};
     \node[box, right=of oof] (bl) {Blend + calibrate\\ (EM, temperature)};
     \node[box, right=of bl, yshift=0.55cm] (rf) {Refit on all\\ visible rows};
@@ -151,7 +151,7 @@ P(y_j = v \mid x) &= P(\text{asked}_j \mid x)\, P(v \mid \text{asked}_j, x),\\
 P(y_j = \texttt{NA\_GATED} \mid x) &= 1 - P(\text{asked}_j \mid x),\\
 P(\text{asked}_j \mid x) &= \textstyle\sum_v P(\text{parent}_j = v \mid x)\, t_j(v, c(x)),
 \end{align*}
-where $t_j(v, c(x))$ is the observed rate at which item $j$ was asked, given the parent's answer $v$
+where $t_j(v, c(x))$ is the observed rate at which item $j$ was asked (its \emph{asked rate}), given the parent's answer $v$
 and up to two context columns $c(x)$ (typically the survey round). Where data are sparse, these
 rates are pulled toward the routing rule in the schema. Context columns are chosen greedily by
 bias-corrected conditional mutual information. Items are predicted in an order in which every
@@ -269,7 +269,7 @@ visible respondents (the crowd marginal) and therefore scores 0 by definition.
 \subsection{Breakdown by population, survey, or question type}
 UNHCR, the survey with the most structure (213 items, 156 of them gated, 139 options of
 multi-select questions), is where modelling choices mattered most. On the development leaderboard
-(on the earlier scale, where 0 meant a uniform guess), modelling the skip logic with asked-rates
+(on the earlier scale, where 0 meant a uniform guess), modelling the skip logic with asked rates
 that depend on the survey round raised UNHCR from 0.76 to 0.90, and gradient boosting on every item to 0.92; UNICEF (0.52) and World
 Bank (0.49) did not move in any version. UNHCR remains our weakest survey relative to the
 leaders (0.85 vs.\ 0.87 on the development leaderboard, current scale).
